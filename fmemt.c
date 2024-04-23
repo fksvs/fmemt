@@ -119,12 +119,11 @@ static struct memory_block *list_search(void *ptr)
 
 void report_usage_stat()
 {
-	fprintf(stdout, "\n");
-	fprintf(stdout, "total allocations : %ld\n", usage.total_allocs);
-	fprintf(stdout, "total allocated memory : %ld\n", usage.total_alloc_mem);
-	fprintf(stdout, "total frees : %ld\n", usage.total_frees);
-	fprintf(stdout, "total freed memory : %ld\n", usage.total_freed_mem);
-	fprintf(stdout, "\n");
+	fprintf(stdout, "\nheap usage statistics:\n");
+	fprintf(stdout, " %ld allocations, %ld bytes allocated\n",
+			usage.total_allocs, usage.total_alloc_mem);
+	fprintf(stdout, " %ld frees, %ld bytes freed\n", 
+			usage.total_frees, usage.total_freed_mem);
 }
 
 void report_leak_stat()
@@ -133,24 +132,21 @@ void report_leak_stat()
 	size_t total_leaks = 0;
 	size_t total_leaked_mem = 0;
 
+	fprintf(stdout, "\nleak statistics:\n");
 	while (node != NULL) {
 		if (node->block->flag == MEM_FLAG_USE) {
 			total_leaks++;
 			total_leaked_mem += node->block->block_size;
-			fprintf(stdout, "%ld bytes of memory leaked\n",
-					node->block->block_size);
-			fprintf(stdout, "at %p, %s (%s:%d)\n",
-					node->block->ptr, func_string[node->block->function],
+			fprintf(stdout, "  %ld bytes leaked\n  at %p, %s (%s:%d)\n\n",
+					node->block->block_size, node->block->ptr,
+					func_string[node->block->function],
 					node->block->filename, node->block->line);
-			fprintf(stdout, "\n");
 		}
 
 		node = node->next;
 	}
 
-	fprintf(stdout, "total leaks : %ld\n", total_leaks);
-	fprintf(stdout, "total leaked memory : %ld\n", total_leaked_mem);
-	fprintf(stdout, "\n");
+	fprintf(stdout, " %ld leaks, %ld bytes leaked\n\n", total_leaks, total_leaked_mem);
 }
 
 int fmemt_init()
@@ -268,6 +264,7 @@ void *fmemt_realloc(void *ptr, size_t size, const char *filename, int line)
 	if (block) {
 		block->ptr = new_ptr;
 		block->block_size = size;
+		block->flag = MEM_FLAG_USE;
 		block->function = REALLOC;
 		block->line = line;
 		strncpy(block->filename, filename, strlen(filename));
@@ -306,6 +303,7 @@ void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size,
 	if (block) {
 		block->ptr = new_ptr;
 		block->block_size = size;
+		block->flag = MEM_FLAG_USE;
 		block->function = REALLOCARRAY;
 		block->line = line;
 		strncpy(block->filename, filename, strlen(filename));
