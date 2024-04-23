@@ -2,6 +2,40 @@
 #include <stdlib.h>
 #include "fmemt.h"
 
+#define MEM_FLAG_USE 0
+#define MEM_FLAG_FREE 1
+
+#define FREE 0
+#define MALLOC 1
+#define CALLOC 2
+#define REALLOC 3
+#define REALLOCARRAY 4
+
+struct memory_block {
+        void *ptr;
+        size_t block_size;
+        int flag;
+        int function;
+};
+
+struct node_t {
+        struct memory_block *block;
+        struct node_t *prev;
+        struct node_t *next;
+};
+
+typedef struct {
+        struct node_t *head;
+        struct node_t *tail;
+} list_t;
+
+struct usage_stat {
+        size_t total_allocs;
+        size_t total_alloc_mem;
+        size_t total_frees;
+        size_t total_freed_mem;
+};
+
 static list_t *memory_list = NULL;
 static struct usage_stat usage;
 
@@ -24,9 +58,7 @@ static void list_destroy()
 
 	while (node != NULL) {
 		struct node_t *temp = node->next;
-		if (node->block->flag == MEM_FLAG_USE) {
-			free(node->block->ptr);
-		}
+		free(node->block);
 		free(node);
 		node = temp;
 	}
@@ -79,8 +111,6 @@ void report_usage_stat()
 {
 	fprintf(stdout, "total allocations : %ld\n", usage.total_allocs);
 	fprintf(stdout, "total allocated memory : %ld\n", usage.total_alloc_mem);
-	fprintf(stdout, "maximum allocated memory : %ld\n", usage.max_alloc_mem);
-	fprintf(stdout, "minimum allocated memory : %ld\n", usage.min_alloc_mem);
 	fprintf(stdout, "total frees : %ld\n", usage.total_frees);
 	fprintf(stdout, "total freed memory : %ld\n", usage.total_freed_mem);
 }
@@ -114,8 +144,6 @@ int fmemt_init()
 
 	usage.total_allocs = 0;
 	usage.total_alloc_mem = 0;
-	usage.max_alloc_mem = 0;
-	usage.min_alloc_mem = 0;
 	usage.total_frees = 0;
 	usage.total_freed_mem = 0;
 }
@@ -125,6 +153,17 @@ void fmemt_destroy()
 	report_usage_stat();
 	report_leak_stat();
 	list_destroy();
+}
+
+void update_usage(int mode, size_t size)
+{
+	if (mode != FREE) {
+		usage.total_allocs++;
+		usage.total_alloc_mem += size;
+	} else {
+		usage.total_frees++;
+		usage.total_freed_mem += size;
+	}
 }
 
 void *fmemt_malloc(size_t size)
@@ -143,18 +182,10 @@ void *fmemt_malloc(size_t size)
 	block->ptr = ptr;
 	block->block_size = size;
 	block->flag = MEM_FLAG_USE;
+	block->function = MALLOC;
 
 	list_insert(block);
-
-	usage.total_allocs++;
-	usage.total_alloc_mem += size;
-	if (size > usage.max_alloc_mem) {
-		usage.max_alloc_mem = size;
-	}
-
-	if (size < usage.min_alloc_mem) {
-		usage.min_alloc_mem = size;
-	}
+	update_usage(MALLOC, size);
 
 	return ptr;
 }
@@ -166,9 +197,8 @@ void fmemt_free(void *ptr)
 
 		if (block) {
 			block->flag = MEM_FLAG_FREE;
-
-			usage.total_frees++;
-			usage.total_freed_mem += block->block_size;
+			block->function = FREE;
+			update_usage(FREE, block->block_size);
 		}
 	}
 }
@@ -189,22 +219,76 @@ void *fmemt_calloc(size_t nmemb, size_t size)
 	block->ptr = ptr;
 	block->block_size = size;
 	block->flag = MEM_FLAG_USE;
+	block->function = CALLOC;
 
 	list_insert(block);
-
-	usage.total_allocs++;
-	usage.total_alloc_mem += size * nmemb;
-	if (size * nmemb > usage.max_alloc_mem) {
-		usage.max_alloc_mem = size * nmemb;
-	}
-	if (size * nmemb < usage.min_alloc_mem) {
-		usage.min_alloc_mem = size * nmemb;
-	}
+	update_usage(CALLOC, size);
 
 	return ptr;
 }
 
-/*
-void *fmemt_realloc(void *ptr, size_t size);
-void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size);
-*/
+void *fmemt_realloc(void *ptr, size_t size)
+{
+	struct memory_block *block;
+	void *new_ptr;
+
+	if (!memory_list) {
+		list_init();
+	}
+
+	if ((new_ptr = realloc(ptr, size)) == NULL) {
+		return new_ptr;
+	}
+
+	block = list_search(ptr);
+	if (block) {
+		block->ptr = new_ptr;
+		block->block_size = size;
+		block->function = REALLOC;
+	} else if (!block){
+		block = malloc(sizeof(struct memory_block));
+
+		block->ptr = new_ptr;
+		block->block_size = size;
+		block->flag = MEM_FLAG_USE;
+		block->function = REALLOC;
+
+		list_insert(block);
+	}
+	update_usage(REALLOC, size);
+
+	return new_ptr;
+}
+
+void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size)
+{
+	struct memory_block *block;
+	void *new_ptr;
+
+	if (!memory_list) {
+		list_init();
+	}
+
+	if ((new_ptr = reallocarray(ptr, nmemb, size)) == NULL) {
+		return new_ptr;
+	}
+
+	block = list_search(ptr);
+	if (block) {
+		block->ptr = new_ptr;
+		block->block_size = size;
+		block->function = REALLOCARRAY;
+	} else if (!block) {
+		block = malloc(sizeof(struct memory_block));
+
+		block->ptr = new_ptr;
+		block->block_size = nmemb * size;
+		block->flag = MEM_FLAG_USE;
+		block->function = REALLOCARRAY;
+
+		list_insert(block);
+	}
+	update_usage(REALLOCARRAY, nmemb * size);
+
+	return new_ptr;
+}
