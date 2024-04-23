@@ -1,21 +1,31 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "fmemt.h"
 
 #define MEM_FLAG_USE 0
 #define MEM_FLAG_FREE 1
 
-#define FREE 0
-#define MALLOC 1
-#define CALLOC 2
-#define REALLOC 3
-#define REALLOCARRAY 4
+enum {
+	FREE,
+	MALLOC,
+	CALLOC,
+	REALLOC,
+	REALLOCARRAY
+};
+
+static const char *func_string[] = { "free()", "malloc()", "calloc()", "realloc()",
+					"reallocarray()" };
+
+#define MAX_FILENAME 256
 
 struct memory_block {
         void *ptr;
         size_t block_size;
         int flag;
         int function;
+	int line;
+	char filename[MAX_FILENAME];
 };
 
 struct node_t {
@@ -109,10 +119,12 @@ static struct memory_block *list_search(void *ptr)
 
 void report_usage_stat()
 {
+	fprintf(stdout, "\n");
 	fprintf(stdout, "total allocations : %ld\n", usage.total_allocs);
 	fprintf(stdout, "total allocated memory : %ld\n", usage.total_alloc_mem);
 	fprintf(stdout, "total frees : %ld\n", usage.total_frees);
 	fprintf(stdout, "total freed memory : %ld\n", usage.total_freed_mem);
+	fprintf(stdout, "\n");
 }
 
 void report_leak_stat()
@@ -125,8 +137,12 @@ void report_leak_stat()
 		if (node->block->flag == MEM_FLAG_USE) {
 			total_leaks++;
 			total_leaked_mem += node->block->block_size;
-			fprintf(stdout, "at %p, %ld bytes of memory leaked\n", 
-				node->block->ptr, node->block->block_size);
+			fprintf(stdout, "%ld bytes of memory leaked\n",
+					node->block->block_size);
+			fprintf(stdout, "at %p, %s (%s:%d)\n",
+					node->block->ptr, func_string[node->block->function],
+					node->block->filename, node->block->line);
+			fprintf(stdout, "\n");
 		}
 
 		node = node->next;
@@ -134,6 +150,7 @@ void report_leak_stat()
 
 	fprintf(stdout, "total leaks : %ld\n", total_leaks);
 	fprintf(stdout, "total leaked memory : %ld\n", total_leaked_mem);
+	fprintf(stdout, "\n");
 }
 
 int fmemt_init()
@@ -166,7 +183,7 @@ void update_usage(int mode, size_t size)
 	}
 }
 
-void *fmemt_malloc(size_t size)
+void *fmemt_malloc(size_t size, const char *filename, int line)
 {
 	struct memory_block *block = malloc(sizeof(struct memory_block));
 	void *ptr;
@@ -183,6 +200,8 @@ void *fmemt_malloc(size_t size)
 	block->block_size = size;
 	block->flag = MEM_FLAG_USE;
 	block->function = MALLOC;
+	block->line = line;
+	strncpy(block->filename, filename, strlen(filename));
 
 	list_insert(block);
 	update_usage(MALLOC, size);
@@ -190,7 +209,7 @@ void *fmemt_malloc(size_t size)
 	return ptr;
 }
 
-void fmemt_free(void *ptr)
+void fmemt_free(void *ptr, const char *filename, int line)
 {
 	if (memory_list) {
 		struct memory_block *block = list_search(ptr);
@@ -198,12 +217,15 @@ void fmemt_free(void *ptr)
 		if (block) {
 			block->flag = MEM_FLAG_FREE;
 			block->function = FREE;
+			strncpy(block->filename, filename, strlen(filename));
+			block->line = line;
+
 			update_usage(FREE, block->block_size);
 		}
 	}
 }
 
-void *fmemt_calloc(size_t nmemb, size_t size)
+void *fmemt_calloc(size_t nmemb, size_t size, const char *filename, int line)
 {
 	struct memory_block *block = malloc(sizeof(struct memory_block));
 	void *ptr;
@@ -220,6 +242,8 @@ void *fmemt_calloc(size_t nmemb, size_t size)
 	block->block_size = size;
 	block->flag = MEM_FLAG_USE;
 	block->function = CALLOC;
+	block->line = line;
+	strncpy(block->filename, filename, strlen(filename));
 
 	list_insert(block);
 	update_usage(CALLOC, size);
@@ -227,7 +251,7 @@ void *fmemt_calloc(size_t nmemb, size_t size)
 	return ptr;
 }
 
-void *fmemt_realloc(void *ptr, size_t size)
+void *fmemt_realloc(void *ptr, size_t size, const char *filename, int line)
 {
 	struct memory_block *block;
 	void *new_ptr;
@@ -245,6 +269,8 @@ void *fmemt_realloc(void *ptr, size_t size)
 		block->ptr = new_ptr;
 		block->block_size = size;
 		block->function = REALLOC;
+		block->line = line;
+		strncpy(block->filename, filename, strlen(filename));
 	} else if (!block){
 		block = malloc(sizeof(struct memory_block));
 
@@ -252,6 +278,8 @@ void *fmemt_realloc(void *ptr, size_t size)
 		block->block_size = size;
 		block->flag = MEM_FLAG_USE;
 		block->function = REALLOC;
+		block->line = line;
+		strncpy(block->filename, filename, strlen(filename));
 
 		list_insert(block);
 	}
@@ -260,7 +288,8 @@ void *fmemt_realloc(void *ptr, size_t size)
 	return new_ptr;
 }
 
-void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size)
+void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size,
+			const char *filename, int line)
 {
 	struct memory_block *block;
 	void *new_ptr;
@@ -278,6 +307,8 @@ void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size)
 		block->ptr = new_ptr;
 		block->block_size = size;
 		block->function = REALLOCARRAY;
+		block->line = line;
+		strncpy(block->filename, filename, strlen(filename));
 	} else if (!block) {
 		block = malloc(sizeof(struct memory_block));
 
@@ -285,6 +316,8 @@ void *fmemt_reallocarray(void *ptr, size_t nmemb, size_t size)
 		block->block_size = nmemb * size;
 		block->flag = MEM_FLAG_USE;
 		block->function = REALLOCARRAY;
+		block->line = line;
+		strncpy(block->filename, filename, strlen(filename));
 
 		list_insert(block);
 	}
