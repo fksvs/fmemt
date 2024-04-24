@@ -39,20 +39,60 @@ typedef struct {
 
 static memory_list *memory = NULL;
 
-static int list_init()
+void report_usage_stat()
+{
+	fprintf(stdout, "\nheap usage statistics:\n");
+	fprintf(stdout, " %ld allocations, %ld bytes allocated\n",
+			memory->total_allocs, memory->total_alloc_mem);
+	fprintf(stdout, " %ld frees, %ld bytes freed\n",
+			memory->total_frees, memory->total_freed_mem);
+}
+
+void report_leak_stat()
+{
+	struct memory_block *block = memory->head;
+	size_t total_leaks = 0;
+	size_t total_leaked_mem = 0;
+
+	fprintf(stdout, "\nleak statistics:\n");
+	while (block != NULL) {
+		if (block->flag == MEM_FLAG_USE) {
+			total_leaks++;
+			total_leaked_mem += block->block_size;
+			fprintf(stdout, "  %ld bytes leaked\n  at %p, %s (%s:%d)\n\n",
+					block->block_size, block->ptr,
+					func_string[block->function],
+					block->filename, block->line);
+		}
+
+		block = block->next;
+	}
+
+	fprintf(stdout, " %ld leaks, %ld bytes leaked\n\n", total_leaks, total_leaked_mem);
+}
+
+
+int fmemt_init()
 {
 	memory = malloc(sizeof(memory_list));
 	if (!memory) return -1;
 
+	memory->total_allocs = 0;
+	memory->total_alloc_mem = 0;
+	memory->total_frees = 0;
+	memory->total_freed_mem = 0;
 	memory->head = NULL;
 	memory->tail = NULL;
 
 	return 0;
 }
 
-static void list_destroy()
+void fmemt_destroy()
 {
 	struct memory_block *block = memory->head;
+
+	report_usage_stat();
+	report_leak_stat();
 
 	while (block != NULL) {
 		struct memory_block *temp = block->next;
@@ -101,57 +141,6 @@ static void list_update(void *ptr, size_t size, int flag,
 	block->function = func;
 	block->line = line;
 	strncpy(block->filename, file, strlen(file));
-}
-
-void report_usage_stat()
-{
-	fprintf(stdout, "\nheap usage statistics:\n");
-	fprintf(stdout, " %ld allocations, %ld bytes allocated\n",
-			memory->total_allocs, memory->total_alloc_mem);
-	fprintf(stdout, " %ld frees, %ld bytes freed\n", 
-			memory->total_frees, memory->total_freed_mem);
-}
-
-void report_leak_stat()
-{
-	struct memory_block *block = memory->head;
-	size_t total_leaks = 0;
-	size_t total_leaked_mem = 0;
-
-	fprintf(stdout, "\nleak statistics:\n");
-	while (block != NULL) {
-		if (block->flag == MEM_FLAG_USE) {
-			total_leaks++;
-			total_leaked_mem += block->block_size;
-			fprintf(stdout, "  %ld bytes leaked\n  at %p, %s (%s:%d)\n\n",
-					block->block_size, block->ptr,
-					func_string[block->function],
-					block->filename, block->line);
-		}
-
-		block = block->next;
-	}
-
-	fprintf(stdout, " %ld leaks, %ld bytes leaked\n\n", total_leaks, total_leaked_mem);
-}
-
-int fmemt_init()
-{
-	if (list_init() == -1) return -1;
-
-	memory->total_allocs = 0;
-	memory->total_alloc_mem = 0;
-	memory->total_frees = 0;
-	memory->total_freed_mem = 0;
-
-	return 0;
-}
-
-void fmemt_destroy()
-{
-	report_usage_stat();
-	report_leak_stat();
-	list_destroy();
 }
 
 void update_usage(int mode, size_t size)
@@ -204,7 +193,7 @@ void *fmemt_calloc(size_t nmemb, size_t size, const char *filename, int line)
 	if ((ptr = calloc(nmemb, size)) == NULL) return ptr;
 
 	list_update(ptr, nmemb * size, MEM_FLAG_USE, CALLOC, line, filename);
-	update_usage(CALLOC, size);
+	update_usage(CALLOC, nmemb  * size);
 
 	return ptr;
 }
