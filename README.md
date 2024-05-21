@@ -57,7 +57,7 @@ Macros defined for simplified use:
 
 ```c
 mt_malloc(SIZE) fmemt_malloc(SIZE, __FILE__, __LINE__)
-mt_free(PTR) fmemt_free(PTR, __FILE__, __LINE__);
+mt_free(PTR) fmemt_free(PTR, __FILE__, __LINE__)
 mt_calloc(NMEMB, SIZE) fmemt_calloc(NMEMB, SIZE, __FILE__, __LINE__)
 mt_realloc(PTR, SIZE) fmemt_realloc(PTR, SIZE, __FILE__, __LINE__)
 mt_reallocarray(PTR, NMEMB, SIZE) fmemt_reallocarray(PTR, NMEMB, SIZE, __FILE__, __LINE__)
